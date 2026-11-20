@@ -10,7 +10,7 @@ const TRIER_ANSTIEG_CM_H = 10;
 const TRIER_ZU_COCHEM_CM = 60;
 const TRIER_SCHAETZUNG_AB_CM = 700;
 const ERNEUT_MELDEN_CM = 25;   // bei GEFAHR/ACHTUNG: erneut melden, wenn Erwartung um 25 cm steigt
-const NTFY_TOPIC = 'pegel-cochem-fc041da37e';
+const NTFY_TOPIC = process.env.NTFY_TOPIC;   // geheim: kommt aus GitHub-Secret NTFY_TOPIC
 const SEITE = 'https://steckerinho.github.io/pegel/';
 // ================================================================================
 
@@ -42,6 +42,8 @@ async function push(titel, text, prio, tags) {
   });
   console.log('Push gesendet:', titel, '->', r.status);
 }
+
+if (!NTFY_TOPIC) { console.log('Secret NTFY_TOPIC fehlt!'); process.exit(1); }
 
 const alt = existsSync(STATUS_DATEI) ? JSON.parse(readFileSync(STATUS_DATEI, 'utf8')) : { stufe: 0 };
 
