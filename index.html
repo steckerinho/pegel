@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pegel Cochem & Trier</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px; background: #f4f6f8; color: #222; }
+  h2 { margin: 22px 4px 8px; font-size: 1.1rem; color: #444; }
+  .karte { background: #fff; border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .status { color: #fff; text-align: center; background: #888; }
+  .status h1 { margin: 0; font-size: 2rem; letter-spacing: .05em; }
+  .status.klein h1 { font-size: 1.5rem; }
+  .pegel { font-size: 3rem; font-weight: 700; text-align: center; margin: 4px 0; }
+  .mitte { text-align: center; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid div { background: #f4f6f8; border-radius: 10px; padding: 10px; }
+  .grid b { display: block; font-size: 1.25rem; }
+  .button { display: block; text-align: center; background: #1565c0; color: #fff; text-decoration: none; padding: 14px; border-radius: 12px; font-weight: 600; margin-bottom: 14px; }
+  small, .hinweis { color: #666; }
+  a { color: #1565c0; }
+  svg text { font-family: system-ui, sans-serif; }
+  .diagtitel { font-size: .9rem; color: #444; font-weight: 600; margin: 4px 0 2px; }
+  .diagtitel + svg { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<h2>Cochem – mein Haus</h2>
+<div class="karte status" id="c-status"><h1>…</h1><div>Lade Pegeldaten</div></div>
+<div class="karte">
+  <div class="pegel" id="c-pegel">–</div>
+  <div class="mitte"><small id="c-zeit"></small></div>
+</div>
+<div class="karte grid">
+  <div>Tendenz (3 h)<b id="c-tendenz">–</b></div>
+  <div>Änderung 24 h<b id="c-diff24">–</b></div>
+  <div>Bis zu meinem Haus<b id="c-abstand">–</b></div>
+  <div>Hochrechnung<b id="c-hoch">–</b></div>
+</div>
+<div class="karte" id="c-diagramm"></div>
+
+<h2>Trier – Frühwarnung (Welle braucht bis ca. 18 h nach Cochem)</h2>
+<div class="karte status klein" id="t-status"><h1>…</h1><div>Lade Pegeldaten</div></div>
+<div class="karte">
+  <div class="pegel" id="t-pegel">–</div>
+  <div class="mitte"><small id="t-zeit"></small></div>
+</div>
+<div class="karte grid">
+  <div>Tendenz (3 h)<b id="t-tendenz">–</b></div>
+  <div>Änderung 24 h<b id="t-diff24">–</b></div>
+  <div>Erwartet in Cochem*<b id="t-erwartet">–</b></div>
+  <div>Dann bis zu meinem Haus<b id="t-haus">–</b></div>
+</div>
+<div class="karte hinweis" id="t-erklaerung">
+  * Grobe Schätzung aus früheren Hochwassern (1993, 1995, 2003): Der Scheitel in Cochem lag 0,60–0,95 m unter dem in Trier
+  und kam bis zu ca. 18 Stunden später. Gerechnet wird vorsichtig mit −0,60 m. Steigt Trier noch, wird es in Cochem entsprechend höher.
+  Gilt nur für größere Hochwasser (Trier über ca. 7 m).
+</div>
+<div class="karte" id="t-diagramm"></div>
+
+<a class="button" href="https://www.hochwasser.rlp.de">Offizielle Hochwasser-Vorhersage (hochwasser.rlp.de)</a>
+
+<div class="karte hinweis">
+  Die Hochrechnung schreibt nur den Anstieg der letzten 3 Stunden fort und ist keine Vorhersage.
+  Pegelansage Cochem: <a href="tel:0267119429">02671 / 19429</a> · Trier: <a href="tel:065119429">0651 / 19429</a><br>
+  Daten: PEGELONLINE (WSV), Rohdaten ohne Gewähr. Aktualisiert sich alle 5 Minuten.
+</div>
+
+<script>
+// ===================== EINSTELLUNGEN =====================
+// COCHEM: Ab diesem Pegel (cm) läuft Wasser in dein Haus.
+// Rechnung: Höhe Türschwelle/Keller in m ü. NHN minus 77,03 = Meter am Pegel.
+// Tiefster Geländepunkt am Haus ca. 9,60 m Pegel -> 30 cm Sicherheit
+const HAUS_KRITISCH_CM = 930;   // <-- bei Bedarf anpassen
+const WARNUNG_CM       = 750;   // <-- bei Bedarf anpassen
+const NORMAL_CM        = 300;
+
+// TRIER: offizielle Meldestufen laut PEGELONLINE (Pegel Trier, Nr. 26500100)
+const TRIER_ORANGE_CM  = 520;   // Meldestufe I
+const TRIER_ROT_CM     = 695;   // Meldestufe III
+const TRIER_ANSTIEG_CM_H = 10;  // schneller Anstieg -> Orange
+const TRIER_ZU_COCHEM_CM = 60;  // Cochem-Scheitel ca. 0,60–0,95 m unter Trier (vorsichtig 0,60)
+const TRIER_SCHAETZUNG_AB_CM = 700; // Schätzung erst bei größerem Hochwasser sinnvoll
+// =========================================================
+
+const API = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/';
+const COCHEM = '768df4e9-ed5a-4141-901b-e25ac404d559';
+const TRIER  = '3bec53ca-444e-4014-a7b0-07b3591e954b';
+const GRUEN = '#1b7f3b', ORANGE = '#e65c00', ROT = '#b00020';
+
+const m = cm => (cm / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m';
+const $ = id => document.getElementById(id);
+const vz = x => (x > 0 ? '+' : '') + x.toLocaleString('de-DE', { maximumFractionDigits: 1 });
+
+function wertVor(werte, jetzt, stunden) {
+  const ziel = jetzt - stunden * 3600e3;
+  let best = null;
+  for (const w of werte) { if (new Date(w.timestamp) <= ziel) best = w; else break; }
+  return best;
+}
+
+function auswerten(werte) {
+  const letzter = werte[werte.length - 1];
+  const jetzt = new Date(letzter.timestamp), pegel = letzter.value;
+  const v3 = wertVor(werte, jetzt, 3), v24 = wertVor(werte, jetzt, 24);
+  const tendenz = v3 ? (pegel - v3.value) / (((jetzt - new Date(v3.timestamp)) / 3600e3) || 1) : 0;
+  const diff24 = v24 ? pegel - v24.value : null;
+  return { jetzt, pegel, tendenz, diff24 };
+}
+
+function zeichne(ziel, werte, linien) {
+  const ende = new Date(werte[werte.length - 1].timestamp);
+  const ab = st => werte.filter(w => new Date(w.timestamp) >= ende - st * 3600e3);
+  $(ziel).innerHTML =
+    '<div class="diagtitel">Letzte 24 Stunden</div>' + diagramm(ab(24), linien, 'vor 24 h') +
+    '<div class="diagtitel">Letzte 7 Tage</div>' + diagramm(ab(168), linien, 'vor 7 Tagen');
+}
+
+function diagramm(werte, linien, links) {
+  const W = 600, H = 200, P = 34;
+  const vals = werte.map(w => w.value);
+  const grenzen = linien.map(l => l[0]);
+  const min = Math.min(...vals, ...grenzen) - 40, max = Math.max(...vals, ...grenzen) + 30;
+  const y = v => H - P - (v - min) / (max - min) * (H - 2 * P);
+  const pts = vals.map((v, i) => `${(P + i / Math.max(1, vals.length - 1) * (W - 2 * P)).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const linie = ([v, f, t]) => `<line x1="${P}" x2="${W - P}" y1="${y(v)}" y2="${y(v)}" stroke="${f}" stroke-dasharray="5 4"/>
+    <text x="${W - P}" y="${y(v) - 4}" text-anchor="end" font-size="12" fill="${f}">${t}</text>`;
+  const hoch = Math.max(...vals), tief = Math.min(...vals);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Pegelverlauf ${links}">
+    ${linien.map(linie).join('')}
+    <polyline fill="none" stroke="#1565c0" stroke-width="2.5" points="${pts}"/>
+    <text x="${P}" y="14" font-size="12" fill="#666">höchster ${m(hoch)} · tiefster ${m(tief)}</text>
+    <text x="${P}" y="${H - 8}" font-size="12" fill="#666">${links}</text>
+    <text x="${W - P}" y="${H - 8}" text-anchor="end" font-size="12" fill="#666">jetzt</text></svg>`;
+}
+
+function anzeigen(p, a, s) {
+  $(p + '-status').style.background = s[2];
+  $(p + '-status').innerHTML = `<h1>${s[0]}</h1><div>${s[1]}</div>`;
+  $(p + '-pegel').textContent = m(a.pegel);
+  $(p + '-pegel').style.color = s[2];
+  $(p + '-zeit').textContent = 'Stand ' + a.jetzt.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' }) + ' Uhr';
+  $(p + '-tendenz').textContent = vz(a.tendenz) + ' cm/h';
+  $(p + '-diff24').textContent = a.diff24 === null ? '–' : vz(Math.round(a.diff24)) + ' cm';
+}
+
+function fehler(p) {
+  $(p + '-status').style.background = '#555';
+  $(p + '-status').innerHTML = '<h1>Keine Daten</h1><div>PEGELONLINE nicht erreichbar – später erneut versuchen.</div>';
+}
+
+async function holen(uuid) {
+  const werte = await (await fetch(API + uuid + '/W/measurements.json?start=P7D', { cache: 'no-store' })).json();
+  if (!Array.isArray(werte) || !werte.length) throw new Error();
+  return werte;
+}
+
+async function cochem() {
+  try {
+    const werte = await holen(COCHEM), a = auswerten(werte);
+    const abstand = HAUS_KRITISCH_CM - a.pegel;
+    const stunden = (a.tendenz > 0.5 && abstand > 0) ? abstand / a.tendenz : null;
+    let s;
+    if (a.pegel >= HAUS_KRITISCH_CM) s = ['GEFAHR', 'Pegel hat meine kritische Marke erreicht!', ROT];
+    else if (a.pegel >= WARNUNG_CM) s = ['ACHTUNG', 'Pegel über meiner Warnmarke.', ORANGE];
+    else if (a.tendenz > 3 && a.pegel > NORMAL_CM + 100) s = ['BEOBACHTEN', 'Mosel steigt deutlich.', ORANGE];
+    else s = ['OK', 'Keine Gefahr für mein Haus.', GRUEN];
+    anzeigen('c', a, s);
+    $('c-abstand').textContent = abstand > 0 ? m(abstand) : 'erreicht!';
+    $('c-hoch').textContent = stunden !== null ? 'ca. ' + Math.round(stunden) + ' h' : 'kein Anstieg';
+    zeichne('c-diagramm', werte, [[HAUS_KRITISCH_CM, ROT, 'Haus ' + m(HAUS_KRITISCH_CM)], [WARNUNG_CM, ORANGE, 'Warnung ' + m(WARNUNG_CM)]]);
+  } catch (e) { fehler('c'); }
+}
+
+async function trier() {
+  try {
+    const werte = await holen(TRIER), a = auswerten(werte);
+    const erwartet = a.pegel - TRIER_ZU_COCHEM_CM;
+    const gross = a.pegel >= TRIER_SCHAETZUNG_AB_CM;
+    $('t-erwartet').textContent = gross ? 'ca. ' + m(erwartet) : 'kein großes HW';
+    $('t-haus').textContent = !gross ? '–' : (erwartet < HAUS_KRITISCH_CM ? m(HAUS_KRITISCH_CM - erwartet) : 'GEFAHR!');
+    let s;
+    if (gross && erwartet >= HAUS_KRITISCH_CM) s = ['GEFAHR', 'Cochem erreicht voraussichtlich ca. ' + m(erwartet) + ' – Wasser am Haus möglich. Bis zu ca. 18 h Vorlauf.', ROT];
+    else if (a.pegel >= TRIER_ROT_CM) s = ['HOCHWASSER', 'Trier über Meldestufe III – in Cochem mit Hochwasser rechnen.', ROT];
+    else if (a.pegel >= TRIER_ORANGE_CM) s = ['ACHTUNG', 'Trier über Meldestufe I – Welle kommt Richtung Cochem.', ORANGE];
+    else if (a.tendenz >= TRIER_ANSTIEG_CM_H) s = ['STEIGT SCHNELL', 'Mosel in Trier steigt stark.', ORANGE];
+    else s = ['OK', 'Keine Hochwasserwelle aus Trier.', GRUEN];
+    anzeigen('t', a, s);
+    zeichne('t-diagramm', werte, [[TRIER_ROT_CM, ROT, 'Meldestufe III ' + m(TRIER_ROT_CM)], [TRIER_ORANGE_CM, ORANGE, 'Meldestufe I ' + m(TRIER_ORANGE_CM)]]);
+  } catch (e) { fehler('t'); }
+}
+
+function laden() { cochem(); trier(); }
+laden();
+setInterval(laden, 5 * 60 * 1000);
+</script>
+</body>
+</html>
