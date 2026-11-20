@@ -26,6 +26,15 @@
 </head>
 <body>
 
+<h2>Mein Haus – nächste 24 Stunden</h2>
+<div class="karte status" id="g-status"><h1>…</h1><div>Lade Pegeldaten</div></div>
+<div class="karte grid">
+  <div>Höchster erwarteter Stand Cochem<b id="g-max">–</b></div>
+  <div>Reserve bis zu meinem Haus<b id="g-reserve">–</b></div>
+</div>
+<div class="karte hinweis" id="g-grund"></div>
+<div class="mitte"><small id="g-aktualisiert">–</small> · <a href="#" id="g-neu">jetzt aktualisieren</a></div>
+
 <h2>Cochem – mein Haus</h2>
 <div class="karte status" id="c-status"><h1>…</h1><div>Lade Pegeldaten</div></div>
 <div class="karte">
@@ -170,7 +179,8 @@ async function cochem() {
     $('c-abstand').textContent = abstand > 0 ? m(abstand) : 'erreicht!';
     $('c-hoch').textContent = stunden !== null ? 'ca. ' + Math.round(stunden) + ' h' : 'kein Anstieg';
     zeichne('c-diagramm', werte, [[HAUS_KRITISCH_CM, ROT, 'Haus ' + m(HAUS_KRITISCH_CM)], [WARNUNG_CM, ORANGE, 'Warnung ' + m(WARNUNG_CM)]]);
-  } catch (e) { fehler('c'); }
+    return a;
+  } catch (e) { fehler('c'); return null; }
 }
 
 async function trier() {
@@ -188,10 +198,67 @@ async function trier() {
     else s = ['OK', 'Keine Hochwasserwelle aus Trier.', GRUEN];
     anzeigen('t', a, s);
     zeichne('t-diagramm', werte, [[TRIER_ROT_CM, ROT, 'Meldestufe III ' + m(TRIER_ROT_CM)], [TRIER_ORANGE_CM, ORANGE, 'Meldestufe I ' + m(TRIER_ORANGE_CM)]]);
-  } catch (e) { fehler('t'); }
+    return a;
+  } catch (e) { fehler('t'); return null; }
 }
 
-function laden() { cochem(); trier(); }
+// Gesamteinschätzung für die nächsten 24 Stunden
+function gesamt(c, t) {
+  if (!c) { fehler('g'); return; }
+  const gruende = [];
+  // 1) Cochem: Anstieg der letzten 3 h für 24 h fortgeschrieben (vorsichtig, eher zu hoch)
+  const trend24 = c.pegel + Math.max(0, c.tendenz) * 24;
+  let max = trend24;
+  if (c.tendenz > 0.5) gruende.push('Cochem steigt um ' + vz(c.tendenz) + ' cm/h – in 24 h wären das ca. ' + m(trend24) + '.');
+  else gruende.push('Cochem steigt nicht (' + vz(c.tendenz) + ' cm/h).');
+  // 2) Trier: Welle kommt in bis zu ca. 18 h
+  if (t) {
+    if (t.pegel >= TRIER_SCHAETZUNG_AB_CM) {
+      const ausTrier = t.pegel - TRIER_ZU_COCHEM_CM;
+      max = Math.max(max, ausTrier);
+      gruende.push('Trier steht bei ' + m(t.pegel) + ' – daraus erwartet in Cochem ca. ' + m(ausTrier) + '.');
+    } else if (t.pegel >= TRIER_ORANGE_CM || t.tendenz >= TRIER_ANSTIEG_CM_H) {
+      gruende.push('Trier steigt bzw. ist erhöht (' + m(t.pegel) + ', ' + vz(t.tendenz) + ' cm/h) – Lage beobachten.');
+    } else {
+      gruende.push('Aus Trier kommt keine Hochwasserwelle (' + m(t.pegel) + ').');
+    }
+  } else {
+    gruende.push('Trier-Daten fehlen – Einschätzung nur aus Cochem.');
+  }
+  const reserve = HAUS_KRITISCH_CM - max;
+  let s;
+  if (max >= HAUS_KRITISCH_CM) s = ['GEFAHR', 'Wasser am Haus in den nächsten 24 Stunden möglich!', ROT];
+  else if (max >= WARNUNG_CM || (t && (t.pegel >= TRIER_ORANGE_CM || t.tendenz >= TRIER_ANSTIEG_CM_H)) || c.pegel >= WARNUNG_CM)
+    s = ['ACHTUNG', 'Erhöhte Lage – keine akute Gefahr, aber beobachten.', ORANGE];
+  else s = ['KEINE GEFAHR', 'In den nächsten 24 Stunden keine Gefahr für mein Haus erkennbar.', GRUEN];
+  $('g-status').style.background = s[2];
+  $('g-status').innerHTML = `<h1>${s[0]}</h1><div>${s[1]}</div>`;
+  $('g-max').textContent = 'ca. ' + m(max);
+  $('g-max').style.color = s[2];
+  $('g-reserve').textContent = reserve > 0 ? m(reserve) : 'keine!';
+  $('g-grund').innerHTML = gruende.join('<br>') +
+    '<br><small>Grobe eigene Schätzung, keine amtliche Vorhersage – im Zweifel gilt hochwasser.rlp.de.</small>';
+}
+
+let geladenUm = null, messwertVon = null;
+function zeigeAktualisiert() {
+  if (!geladenUm) return;
+  const min = Math.floor((Date.now() - geladenUm) / 60000);
+  const uhr = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
+  $('g-aktualisiert').textContent = 'Aktualisiert ' + (min < 1 ? 'gerade eben' : 'vor ' + min + ' Min.')
+    + (messwertVon ? ' · Messwert von ' + uhr(messwertVon) + ' Uhr' : '');
+}
+
+async function laden() {
+  $('g-aktualisiert').textContent = 'wird aktualisiert …';
+  const [c, t] = await Promise.all([cochem(), trier()]);
+  gesamt(c, t);
+  geladenUm = Date.now();
+  messwertVon = c ? c.jetzt : null;
+  zeigeAktualisiert();
+}
+$('g-neu').addEventListener('click', e => { e.preventDefault(); laden(); });
+setInterval(zeigeAktualisiert, 30 * 1000);
 laden();
 setInterval(laden, 5 * 60 * 1000);
 </script>
