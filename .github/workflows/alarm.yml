@@ -29,6 +29,7 @@ jobs:
       - name: Pegel prüfen
         env:
           TEST: ${{ inputs.test }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: node .github/scripts/alarm.mjs
       - name: Status speichern
         run: |
