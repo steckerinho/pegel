@@ -70,6 +70,16 @@
 
 <a class="button" href="https://www.hochwasser.rlp.de">Offizielle Hochwasser-Vorhersage (hochwasser.rlp.de)</a>
 
+<h2>Benachrichtigungen aufs Handy</h2>
+<div class="karte">
+  Diese Seite prüft alle 15 Minuten automatisch die Pegel – auch wenn sie nicht geöffnet ist –
+  und schickt eine Push-Nachricht, sobald die Ampel oben wechselt (🟠 Achtung, 🔴 Gefahr, 🟢 Entwarnung).<br><br>
+  <b>So aktivieren:</b> App <b>„ntfy“</b> installieren (kostenlos, iPhone &amp; Android), dann auf „+“ tippen und
+  dieses Thema abonnieren: <code>pegel-cochem-fc041da37e</code>
+  <a class="button" style="margin-top:12px" href="https://ntfy.sh/pegel-cochem-fc041da37e">Benachrichtigungen abonnieren</a>
+  <small>Zuletzt geprüft: <span id="alarm-geprueft">–</span></small>
+</div>
+
 <div class="karte hinweis">
   Die Hochrechnung schreibt nur den Anstieg der letzten 3 Stunden fort und ist keine Vorhersage.
   Pegelansage Cochem: <a href="tel:0267119429">02671 / 19429</a> · Trier: <a href="tel:065119429">0651 / 19429</a><br>
@@ -258,6 +268,14 @@ async function laden() {
   zeigeAktualisiert();
 }
 $('g-neu').addEventListener('click', e => { e.preventDefault(); laden(); });
+
+// Zeigt, wann der automatische Alarm zuletzt gelaufen ist (aus dem Workflow-Verlauf)
+fetch('https://api.github.com/repos/steckerinho/pegel/actions/workflows/alarm.yml/runs?per_page=1')
+  .then(r => r.json()).then(d => {
+    const run = d.workflow_runs && d.workflow_runs[0];
+    if (run) $('alarm-geprueft').textContent = new Date(run.updated_at).toLocaleString('de-DE',
+      { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' }) + ' Uhr' + (run.conclusion === 'failure' ? ' (Fehler!)' : '');
+  }).catch(() => {});
 setInterval(zeigeAktualisiert, 30 * 1000);
 laden();
 setInterval(laden, 5 * 60 * 1000);
